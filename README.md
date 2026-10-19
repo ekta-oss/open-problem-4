@@ -21,6 +21,7 @@ GitHub Pages also works: Settings → Pages → deploy from the `main` branch, r
 
 At the end: "Practice complete", **Download my notes** (a text file) and **Delete my saved work**.
 
+- **Only real answers are accepted.** Before any feedback, the page checks that the answer is a real answer to the question. It must be mostly real English words, not the same word repeated, not just "I do not know", written as a sentence, and on the question (at least one idea the question asks for, or one of its topic words). Otherwise the learner stays on the question with a short message ("This does not answer the question yet…"), and the attempt is saved in the record as not valid. For example, "apple orange mango yes and" is not accepted. Weak but genuine answers, such as "I would wait here", are still accepted and get gentle feedback.
 - **Not graded:** a "Practice · not graded" badge and no score. Attempts are saved in the browser as `5.7.open-problem-log`. Nothing is sent anywhere; recordings are never saved or uploaded.
 - The top bar shows "About 10 minutes" and never counts down. There is no Pause button and no time limit, as in the other Module 1 pages.
 - No contractions are used anywhere on screen.

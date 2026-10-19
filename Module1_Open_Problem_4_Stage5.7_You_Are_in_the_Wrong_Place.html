@@ -103,6 +103,8 @@ textarea:disabled { background: #f6f7fc; }
 .count .over { color: var(--warn-text); font-weight: 700; }
 .yours { margin: 10px 0 0; padding: 12px 14px; border-radius: 12px; background: #f6f7fc; border: 1px solid var(--border); color: var(--heading); font-size: 1.15rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .label { margin: 18px 0 0; color: var(--heading); font-weight: 700; font-size: 1.03rem; }
+.invalid { margin: 8px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: 1rem; }
+.invalid:empty { display: none; }
 .fb { margin-top: 10px; padding: 12px 14px; border-radius: 12px; font-size: 1.03rem; }
 .fb.good { background: var(--success-bg); border: 1px solid var(--success-border); color: #0f4f37; }
 .fb.part { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); }
@@ -325,7 +327,7 @@ textarea:disabled { background: #f6f7fc; }
    *   complete – every starter ("ask", "could you", …) is followed by what is needed, not left hanging
    * "first" and "complete" only apply when their part is in the reply; otherwise they pass silently.
    */
-  var Q1 = { id: "plan", min: 5, max: 50,
+  var Q1 = { id: "plan", min: 5, max: 50, invalid: "This does not answer the question yet. Write what you would do first, and why, as a sentence. For example: 'I would …, because …'.", topic: ["wait","stay","sit","room","class","door","corridor","sign*","board","guess","try","next","search","find","lost","mistake","wrong","first"], 
     points: [
       { id: "strategy", kind: "any", label: "A sensible first move", hint: "Say what you would do first, for example go back, read the signs again, or look for someone to ask.",
         options: [
@@ -339,7 +341,7 @@ textarea:disabled { background: #f6f7fc; }
       { terms: ["wait", "stay", "sit down"], unlessAny: "strategy", text: "Waiting can work, but your class may be somewhere else. Going back or asking can be quicker." },
       { terms: ["guess", "any room", "any door", "next door", "try every"], unlessAny: "strategy", text: "Trying any door can take longer. Reading the signs first saves time." }],
     ways: ["Go back the way you came.", "Read the signs again, carefully.", "Look for someone to ask."] };
-  var Q2 = { id: "check", min: 3, max: 30,
+  var Q2 = { id: "check", min: 3, max: 30, spoken: true, invalid: "This does not answer the question yet. Write the words you would say to someone, to find Room 12.", topic: ["room","where","help","find","way"], 
     points: [
       { id: "polite", kind: "keywords", label: "Starts politely", terms: POLITE, praiseNeeds: ["first"], praise: "You started politely.", hint: "Start politely, for example 'Excuse me' or 'Sorry'." },
       { id: "first", kind: "first", of: POLITE, label: "The polite words come first", hint: "Put 'Excuse me' or 'Sorry' at the start." },
@@ -409,6 +411,64 @@ textarea:disabled { background: #f6f7fc; }
   }
   function verdict(r) { return r.all ? "good" : (r.met.filter(function (id) { return r.na.indexOf(id) < 0; }).length ? "part" : "none"); }
 
+  /* ---------- Is it a real answer? (checked before any feedback) ----------
+   * Client feedback (19 Oct 2026): "apple orange mango yes and" was accepted. An answer is only accepted when it is
+   *   1. real English: at least half of its words are common English words or words from the topic;
+   *   2. a sentence: someone doing something (I would…, she says…), an action word, or (for "what would you say"
+   *      questions) a greeting, polite words or a question;
+   *   3. on the question: at least one idea the question asks for (a key-word check passes).
+   * Otherwise the learner stays on the question with a short message, and the attempt is recorded as not valid.
+   */
+  var COMMON = ("a about after again all also am an and any are around as at away back be because been before being best but by can " +
+    "could day did do does doing done down each even first for from get gets go goes going good got had has have he help her here him his " +
+    "how i if in into is it its just know last left let like look make me more most much must my need never new next no not now of off ok " +
+    "okay on once one only or other our out over people place please quick quickly right room said say says see she should so some " +
+    "someone something sorry still sure take than thank thanks that the their them then there these they thing think this those time to " +
+    "too try two up us use very want was way we well went were what when where which while who why will with would yes you your " +
+    "fine nice morning afternoon evening night hello hi goodbye bye see tomorrow name meet first day class friend new person seat").split(" ");
+  var SUBJECTS = ["i", "she", "he", "we", "you", "they", "ananya", "people", "someone", "somebody", "it", "my", "her", "his", "our", "im", "lets", "let us"];
+  var ACTIONS = ["go", "ask", "read", "look", "check", "find", "say", "wait", "call", "walk", "turn", "take", "follow", "try", "use", "tell", "stay",
+    "leave", "come", "greet", "meet", "is", "are", "am", "was", "would", "will", "can", "could", "should", "do", "does", "said", "says", "means", "used", "think"];
+  var SPOKEN = ["hi", "hii", "hello", "hey", "good morning", "good afternoon", "good evening", "good night", "goodbye", "bye", "see you", "excuse me", "sorry", "please", "namaste", "thank you", "nice to meet you"];
+  function vocab(q) {
+    // Every word that appears in this question's key words also counts as a real word.
+    var out = {};
+    var add = function (list) { (list || []).forEach(function (w) { norm(String(w).replace(/\*$/, "")).trim().split(" ").forEach(function (x) { if (x) out[x] = 1; }); }); };
+    (q.points || []).forEach(function (p) { add(p.terms); add(p.of); add(p.starters); (p.options || []).forEach(function (o) { add(o.terms); }); });
+    add(q.topic);
+    return out;
+  }
+  function validity(q, raw, r) {
+    var t = norm(raw), toks = t.trim().split(" ").filter(Boolean);
+    if (!toks.length) return false;
+    var known = vocab(q), real = toks.filter(function (w) { return COMMON.indexOf(w) >= 0 || known[w] || /^\d+$/.test(w); }).length;
+    var english = real / toks.length >= 0.5;
+    // Not the same word again and again ("hello hello hello").
+    var distinct = toks.length < 3 || Object.keys(toks.reduce(function (o, w) { o[w] = 1; return o; }, {})).length / toks.length >= 0.5;
+    // Set aside "not sure / do not know / no idea": what is left must still have a real content word.
+    var core = " " + toks.join(" ") + " ";
+    NON_ANSWER.forEach(function (n) { core = core.split(" " + n + " ").join(" "); });
+    var content = core.trim().split(" ").filter(function (w) { return w && FUNCTION.indexOf(w) < 0; }).length > 0;
+    if (!distinct || !content) return false;
+    var sentence = has(t, SUBJECTS) || has(t, ACTIONS) || (q.spoken && (has(t, SPOKEN) || raw.indexOf("?") >= 0));
+    var onTopic = (q.points || []).some(function (p) { return (!p.kind || p.kind === "keywords" || p.kind === "any") && r.met.indexOf(p.id) >= 0; }) || (q.topic ? has(t, q.topic) : false);
+    return english && sentence && onTopic;
+  }
+  var FUNCTION = ("i me my you your she he her him his we us our they them it its a an the am is are was were be been being do does did " +
+    "would will can could should shall may might must to of in on at by for with from and or but so if then than that this these those there " +
+    "here not no yes yet just very really also too sure maybe perhaps think know idea nothing anything something about").split(" ");
+  var NON_ANSWER = ["i am not sure", "not sure", "i do not know", "do not know", "dont know", "i dont know", "no idea", "i have no idea", "nothing", "no answer"];
+  var NOT_VALID = "This does not answer the question yet. Read the question again, and answer it in your own words, as a sentence.";
+
+  // Keep the learner on the question with a short message; the attempt is recorded as not valid.
+  function rejectAnswer(id, q, text, inputId) {
+    var iv = document.querySelector('[data-testid="invalid-' + id + '"]');
+    if (iv) { iv.textContent = q.invalid || NOT_VALID; iv.classList.remove("shake"); void iv.offsetWidth; iv.classList.add("shake"); }
+    st.attempt.invalid = (st.attempt.invalid || []).concat([{ question: q.id, text: text, words: words(text), at: new Date().toISOString() }]);
+    saveAttempt(st.attempt);
+    var ta = document.getElementById("ans-" + (inputId || id)); if (ta) ta.focus();
+  }
+
   /* ---------- Record (this browser only; never required to work) ---------- */
   var KEY = "m1s1.progress.v1", LOG = "5.7.open-problem-log";
   function readStore() { try { return JSON.parse(localStorage.getItem(KEY)) || { responses: {} }; } catch (e) { return { responses: {} }; } }
@@ -452,9 +512,9 @@ textarea:disabled { background: #f6f7fc; }
     var counter = h("span", { class: n > q.max ? "over" : "", testid: "count-" + opts.id, text: n + " / " + q.max + " words" });
     var msg = h("span", { class: "over", testid: "limit-" + opts.id, "aria-live": "polite", text: limitText(n) });
     var ta = h("textarea", { id: "ans-" + opts.id, testid: "answer-" + opts.id, placeholder: opts.placeholder, disabled: opts.disabled, "aria-describedby": "help-" + opts.id + " cnt-" + opts.id, value: opts.value,
-      oninput: function (e) { var m = words(e.target.value); counter.textContent = m + " / " + q.max + " words"; counter.className = m > q.max ? "over" : ""; msg.textContent = limitText(m); opts.onInput(e.target.value, m >= q.min && m <= q.max); } });
+      oninput: function (e) { var iv = document.querySelector('[data-testid="invalid-' + opts.id + '"]'); if (iv) iv.textContent = ""; var m = words(e.target.value); counter.textContent = m + " / " + q.max + " words"; counter.className = m > q.max ? "over" : ""; msg.textContent = limitText(m); opts.onInput(e.target.value, m >= q.min && m <= q.max); } });
     return h("div", { class: "qbox" }, [h("label", { for: "ans-" + opts.id, text: opts.label }), h("p", { class: "help", id: "help-" + opts.id, text: opts.help }), ta,
-      h("div", { class: "count", id: "cnt-" + opts.id }, [counter, msg])]);
+      h("div", { class: "count", id: "cnt-" + opts.id }, [counter, msg]), h("p", { class: "invalid", testid: "invalid-" + opts.id, "aria-live": "polite" })]);
   }
   function feedback(q, r, testid) {
     var v = verdict(r);
@@ -600,7 +660,8 @@ textarea:disabled { background: #f6f7fc; }
   function top() { window.scrollTo(0, 0); var hd = document.getElementById("head") || document.querySelector("h1"); if (hd) hd.focus({ preventScroll: true }); }
   function stepOne(main) {
     var keep = h("button", { type: "button", class: "btn-amber", testid: "keep", disabled: !inLimit(st.plan, Q1), onclick: function () {
-      st.r1 = evaluate(Q1, st.plan);
+      var r1 = evaluate(Q1, st.plan); if (!validity(Q1, st.plan, r1)) { rejectAnswer("plan", Q1, st.plan); return; }
+      st.r1 = r1;
       st.attempt.plans.push({ text: st.plan, words: words(st.plan), met: st.r1.met, strategies: st.r1.chosen.strategy || [], at: new Date().toISOString() });
       saveAttempt(st.attempt); st.step = 2; render(); top();
     } }, ["Keep my answer", arrow()]);
@@ -641,7 +702,8 @@ textarea:disabled { background: #f6f7fc; }
       ? [h("button", { type: "button", class: "btn-blue", testid: "edit", onclick: function () { st.checked2 = false; render(); var ta = document.getElementById("ans-check"); if (ta) ta.focus(); }, text: "Edit my answer" }),
          h("button", { type: "button", class: "btn-amber", testid: "finish", onclick: function () { st.end = true; st.attempt.finished = true; st.attempt.finishedAt = new Date().toISOString(); saveAttempt(st.attempt); render(); top(); } }, ["Finish", arrow()])]
       : [h("button", { type: "button", class: "btn-amber", testid: "check", disabled: !inLimit(st.words2, Q2), onclick: function () {
-          st.r2 = evaluate(Q2, st.words2); st.checked2 = true;
+          var r2 = evaluate(Q2, st.words2); if (!validity(Q2, st.words2, r2)) { rejectAnswer("check", Q2, st.words2); return; }
+          st.r2 = r2; st.checked2 = true;
           st.attempt.checks.push({ text: st.words2, words: words(st.words2), met: st.r2.met, at: new Date().toISOString() }); saveAttempt(st.attempt);
           render(); var fb = document.querySelector('[data-testid="feedback-check"]'); if (fb) { fb.focus({ preventScroll: true }); fb.scrollIntoView({ block: "nearest" }); if (!st.r2.all) fb.classList.add("shake"); }
         } }, ["Check my answer", arrow()])];
@@ -703,7 +765,7 @@ textarea:disabled { background: #f6f7fc; }
   document.addEventListener("visibilitychange", function () { if (document.hidden && rec && rec.state === "recording") stopRecording(false); });
 
   fresh(null); render();
-  window.__op57 = { evaluate: function (which, text) { return evaluate(which === 0 ? Q1 : Q2, text); }, message: function (which, text) { var q = which === 0 ? Q1 : Q2; return message(q, evaluate(q, text)).join(" "); } }; // test aid
+  window.__op57 = { valid: function (which, text) { var q = which === 0 ? Q1 : Q2; return validity(q, text, evaluate(q, text)); }, evaluate: function (which, text) { return evaluate(which === 0 ? Q1 : Q2, text); }, message: function (which, text) { var q = which === 0 ? Q1 : Q2; return message(q, evaluate(q, text)).join(" "); } }; // test aid
 })();
 </script>
 </body>
