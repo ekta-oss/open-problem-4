@@ -443,6 +443,12 @@ textarea:disabled { background: #f6f7fc; }
     if (!toks.length) return false;
     var known = vocab(q), real = toks.filter(function (w) { return COMMON.indexOf(w) >= 0 || known[w] || /^\d+$/.test(w); }).length;
     var english = real / toks.length >= 0.5;
+    // The content words (not "I", "would", "the"…) must mostly be real everyday words or words from the question.
+    // A name straight after "I am" / "My name is" / "Myself" / "Call me" counts as known.
+    var names = {}; toks.forEach(function (w, i) { var a = toks[i - 1], b = toks[i - 2]; if (a === "myself" || (b === "i" && a === "am") || (b === "name" && a === "is") || (b === "call" && a === "me") || a === "im") names[w] = 1; });
+    var contentToks = toks.filter(function (w) { return FUNCTION.indexOf(w) < 0; });
+    var sensible = !contentToks.length || contentToks.filter(function (w) { return names[w] || knownWord(w, known); }).length / contentToks.length >= 0.5;
+    if (!sensible) return false;
     // Not the same word again and again ("hello hello hello").
     var distinct = toks.length < 3 || Object.keys(toks.reduce(function (o, w) { o[w] = 1; return o; }, {})).length / toks.length >= 0.5;
     // Set aside "not sure / do not know / no idea": what is left must still have a real content word.
@@ -451,13 +457,34 @@ textarea:disabled { background: #f6f7fc; }
     var content = core.trim().split(" ").filter(function (w) { return w && FUNCTION.indexOf(w) < 0; }).length > 0;
     if (!distinct || !content) return false;
     var sentence = has(t, SUBJECTS) || has(t, ACTIONS) || (q.spoken && (has(t, SPOKEN) || raw.indexOf("?") >= 0));
-    var onTopic = (q.points || []).some(function (p) { return (!p.kind || p.kind === "keywords" || p.kind === "any") && r.met.indexOf(p.id) >= 0; }) || (q.topic ? has(t, q.topic) : false);
+    // On the question: the main idea, not only a reason ("because…" alone is not enough).
+    var onTopic = (q.points || []).some(function (p) { return (!p.kind || p.kind === "keywords" || p.kind === "any") && p.id !== "reason" && r.met.indexOf(p.id) >= 0; }) || (q.topic ? has(t, q.topic) : false);
     return english && sentence && onTopic;
   }
   var FUNCTION = ("i me my you your she he her him his we us our they them it its a an the am is are was were be been being do does did " +
     "would will can could should shall may might must to of in on at by for with from and or but so if then than that this these those there " +
     "here not no yes yet just very really also too sure maybe perhaps think know idea nothing anything something about").split(" ");
   var NON_ANSWER = ["i am not sure", "not sure", "i do not know", "do not know", "dont know", "i dont know", "no idea", "i have no idea", "nothing", "no answer"];
+  // Everyday words a learner might use in these answers (besides each question's own key words and topic words).
+  var EVERYDAY = ("go goes went gone going come came coming leave leaves leaving left arrive arrives arrived arriving reach reached walk walked walking " +
+    "run turn turned follow followed following take took ask asked asking tell told say said says talk talked speak spoke call called phone message " +
+    "text help helped find found search searched look looked looking see saw seen watch read reading check checked checking think thought know knew " +
+    "feel felt want wanted need needs needed try tried trying wait waited waiting stay stayed sit sat stand stood open opened close closed start " +
+    "started begin began finish finished end stop stopped meet met meeting greet greeted greeting introduce introduced name smile wave shake hand " +
+    "hands thank thanks sorry please excuse room rooms class classes classroom door doors corridor hall floor building institute college campus " +
+    "school office reception registration desk gate notice board boards sign signs signboard number numbers list paper papers form folder bag map " +
+    "maps road roads street way ways direction directions left right straight corner bus stop station market shop shops tea stall auto rickshaw " +
+    "driver owner person people man woman friend friends teacher teachers staff guard security senior student students someone somebody anyone " +
+    "everyone time minute minutes morning afternoon evening night day today tomorrow week first second next last late early quick quickly slow " +
+    "slowly safe sure correct wrong right mistake lost confused different same similar alike again back near far here there inside outside place " +
+    "places event party home work job library hostel canteen seat chair chairs table window light empty new old good nice fine happy polite " +
+    "friendly calm careful carefully clearly clear easy hard simple goodbye bye hello hi hey namaste okay ok yes no handwritten painted faint " +
+    "thin small big two one twelve wait leaving arriving bed sleep dark welcome guest guests sit seat").split(" ");
+  function knownWord(w, known) {
+    if (COMMON.indexOf(w) >= 0 || FUNCTION.indexOf(w) >= 0 || EVERYDAY.indexOf(w) >= 0 || known[w] || /^\d+$/.test(w)) return true;
+    // Simple endings: signs, checked, looking, goes.
+    return [/s$/, /es$/, /ed$/, /d$/, /ing$/].some(function (re) { var b = w.replace(re, ""); return b !== w && b.length > 1 && (EVERYDAY.indexOf(b) >= 0 || known[b] || COMMON.indexOf(b) >= 0); });
+  }
   var NOT_VALID = "This does not answer the question yet. Read the question again, and answer it in your own words, as a sentence.";
 
   // Keep the learner on the question with a short message; the attempt is recorded as not valid.
